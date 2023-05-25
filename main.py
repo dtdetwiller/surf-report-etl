@@ -16,6 +16,7 @@ DB_URI = os.environ.get('MONGO_DATABASE')
 WAVE_API = os.environ.get('WAVE_API')
 WIND_API = os.environ.get('WIND_API')
 WEATHER_API = os.environ.get('WEATHER_API')
+RATING_API = os.environ.get('RATING_API')
 
 
 class ReportProcessor:
@@ -70,8 +71,21 @@ class ReportProcessor:
                 })
                 continue
 
+            # rating data
+            rating_data = self.fetch_data(RATING_API + spot_id)
+            processed_rating_data = self.process_rating_data(rating_data)
+            if processed_rating_data is None:
+                print(f'No rating data returned for spot ({spot_id})')
+                errors.append({
+                    'error': "no-data-found",
+                    'type': 'rating',
+                    'message': 'No rating data was returned from the API',
+                    'spot_id': spot_id
+                })
+                continue
+
             # merge all the data together
-            report_records = self.merge_data(processed_wave_data, processed_wind_data, processed_weather_data, spot_id)
+            report_records = self.merge_data(processed_wave_data, processed_wind_data, processed_weather_data, processed_rating_data, spot_id)
             if report_records is None:
                 print(f'Data numbers do not add up: {len(processed_wave_data)}, {len(processed_wind_data)}, {len(processed_weather_data)}')
                 errors.append({
@@ -175,8 +189,31 @@ class ReportProcessor:
             processed_hourly_weather_reports.append(processed_hourly_weather_report)
 
         return processed_hourly_weather_reports
+    
+    def process_rating_data(self, data: object) -> list:
+        """
+        Processes the rating data.
 
-    def merge_data(self, wave_data: list, wind_data: list, weather_data: list, spot_id: str) -> list:
+        :data: The rating report json object
+        :return: List of rating data objects
+        """
+
+        hourly_rating_reports = data.get('rating', None)
+
+        if hourly_rating_reports is None:
+            return None
+        
+        processed_hourly_rating_reports = []
+        for report in hourly_rating_reports:
+            processed_hourly_rating_report = {
+                'timestamp': datetime.fromtimestamp(int(report['timestamp'])),
+                'rating': report['rating']
+            }
+            processed_hourly_rating_reports.append(processed_hourly_rating_report)
+
+        return processed_hourly_rating_reports
+
+    def merge_data(self, wave_data: list, wind_data: list, weather_data: list, rating_data: list, spot_id: str) -> list:
         """
         Merge all three data lists into one list of surf report objects.
 
@@ -187,7 +224,7 @@ class ReportProcessor:
         :return: List of surf report objects ready to be inserted.
         """
 
-        if not (len(wave_data) == len(wind_data) == len(weather_data)):
+        if not (len(wave_data) == len(wind_data) == len(weather_data) == len(rating_data)):
             return None
 
         report_records = []
@@ -200,6 +237,7 @@ class ReportProcessor:
             report.update(wave_data[i])
             report.update(wind_data[i])
             report.update(weather_data[i])
+            report.update(rating_data[i])
             
             report_records.append(report)
 
